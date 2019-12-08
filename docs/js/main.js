@@ -1,4 +1,89 @@
 "use strict";
+let ngBuilt = false
+let cookies = document.cookie.split(';')
+import defaultFileSystem from './defaultfs.js'
+if(cookies.includes('terminalOver=true')) {
+ //   window.location.replace("http://www.w3schools.com")
+}
+
+class FileSystem{
+
+    constructor(fileSystem,path=[]) {
+        this.fileSystem = fileSystem
+        this.path = path
+    }
+
+    get cwd() {
+        return this.path.join('/')
+    }
+
+    go(dir) {
+        this.path.push(dir)
+        if(this._traverse()==null) {
+            return null
+        }
+        return this
+    }
+
+    up() {
+        if(this.path.length) {
+            this.path.pop()
+            return this
+        }
+        return null
+    }
+
+    currentDIR() {
+        if(this.path.length) {
+            return this._traverse()
+        }
+        return this.fileSystem
+    }
+
+    mkdir(dir) {
+        if(this.path.length)
+        {
+            this._traverse()[dir] = {}
+        }else {
+            this.fileSystem[dir] = {}
+        }
+        
+        return this
+    }
+
+    newFile(file) {
+        if(this.path.length) {
+            this._traverse()[file] = null   
+        }else {
+            this.fileSystem[file] = null
+        }
+        return this
+    }
+
+    getTree(obj = this.currentDIR(),level = 0) {
+        let indent = level? '>' : ''
+        for(let i = 0; i< level; i++){
+            indent = `---${indent}`
+        }
+        return Object.keys(obj).reduce((acc,curr) => {
+            if(typeof obj[curr] != 'string') {
+                return acc += `\n${indent}${curr}${this.getTree(obj[curr],level+1)}`
+            }
+            return acc += `\n${indent}${curr}`
+        },'')
+    }
+
+    _traverse(obj = this.fileSystem,count = this.path.length) {
+        if(this.path.length && count == 0) {
+            return obj
+        }
+        return this._traverse(obj[this.path[this.path.length - count]],count-1)
+    }
+    
+}
+
+let fs = new FileSystem(defaultFileSystem)
+
 
 var main = (function () {
     /**
@@ -27,7 +112,12 @@ var main = (function () {
             rmdir_help: "Remove directory, this command will only work if the folders are empty.",
             touch_help: "Change file timestamps. If the file doesn't exist, it's created an empty one.",
             sudo_help: "Execute a command as the superuser.",
-            welcome: "Welcome to FTW (Fake Terminal Website)! :)\nIn order for you to start customizing the texts, go to js/main.js and replace the texts located at the configs var.\nIn that same file, you can define all the fake files you want as well as their content. This files will appear on the sidenav.\nAlso, don't forget to change the colors on the css/main.css file as well as the website title on the index.html file.\nNow in order to get started, feel free to either execute the 'help' command or use the more user-friendly colored sidenav at your left.\nIn order to skip text rolling, double click/touch anywhere.",
+            mkdir_help: "Make a directory.",
+            ng_help: 'ng build - Compile Website \n ng deploy - Deploy website',
+            tree_help: "Show tree of current directory.",
+            setFile_help: 'set a desired file. Usage: setFile filename data',
+            node_help: 'execute javascript file',
+            welcome: "Welcome to the Maker Madness blog to build the blog please use the terminal\n type help for more info",
             internet_explorer_warning: "NOTE: I see you're using internet explorer, this website won't work properly.",
             welcome_file_name: "welcome_message.txt",
             invalid_command_message: "<value>: command not found.",
@@ -43,7 +133,7 @@ var main = (function () {
             accesible_cores: "Accessible cores",
             language: "Language",
             value_token: "<value>",
-            host: "example.com",
+            host: "MakerMadness.com",
             user: "guest",
             is_root: false,
             type_delay: 20
@@ -125,6 +215,7 @@ var main = (function () {
     InvalidArgumentException.prototype.constructor = InvalidArgumentException;
 
     var cmds = {
+        NG: { value: "ng", help: configs.getInstance().ng_help },
         LS: { value: "ls", help: configs.getInstance().ls_help },
         CAT: { value: "cat", help: configs.getInstance().cat_help },
         WHOAMI: { value: "whoami", help: configs.getInstance().whoami_help },
@@ -137,7 +228,11 @@ var main = (function () {
         RM: { value: "rm", help: configs.getInstance().rm_help },
         RMDIR: { value: "rmdir", help: configs.getInstance().rmdir_help },
         TOUCH: { value: "touch", help: configs.getInstance().touch_help },
-        SUDO: { value: "sudo", help: configs.getInstance().sudo_help }
+        SUDO: { value: "sudo", help: configs.getInstance().sudo_help },
+        MKDIR: { value: "mkdir", help: configs.getInstance().mkdir_help },
+        TREE: { value: "tree", help: configs.getInstance().tree_help },
+        SETFILE: { value: "setFile", help: configs.getInstance().ng_help },
+        NODE: { value: "node", help: configs.getInstance().ng_help }
     };
 
 
@@ -151,13 +246,7 @@ var main = (function () {
         if (!(output instanceof Node) || output.nodeName.toUpperCase() !== "DIV") {
             throw new InvalidArgumentException("Invalid value " + output + " for argument 'output'.");
         }
-        if (!(sidenav instanceof Node) || sidenav.nodeName.toUpperCase() !== "DIV") {
-            throw new InvalidArgumentException("Invalid value " + sidenav + " for argument 'sidenav'.");
-        }
-        if (!(profilePic instanceof Node) || profilePic.nodeName.toUpperCase() !== "IMG") {
-            throw new InvalidArgumentException("Invalid value " + profilePic + " for argument 'profilePic'.");
-        }
-        (typeof user === "string" && typeof host === "string") && (this.completePrompt = user + "@" + host + ":~" + (root ? "#" : "$"));
+        (typeof user === "string" && typeof host === "string") && (this.completePrompt = () => `${user}@${host}:~${fs.cwd}$`);
         this.profilePic = profilePic;
         this.prompt = prompt;
         this.cmdLine = cmdLine;
@@ -168,20 +257,19 @@ var main = (function () {
         this.typeSimulator = new TypeSimulator(outputTimer, output);
     };
 
-    Terminal.prototype.type = function (text, callback) {
-        this.typeSimulator.type(text, callback);
+    Terminal.prototype.type = function (text, callback, progressbar = false) {
+        this.typeSimulator.type(text, callback,progressbar);
     };
 
     Terminal.prototype.exec = function () {
         var command = this.cmdLine.value;
         this.cmdLine.value = "";
         this.prompt.textContent = "";
-        this.output.innerHTML += "<span class=\"prompt-color\">" + this.completePrompt + "</span> " + command + "<br/>";
+        this.output.innerHTML += "<span class=\"prompt-color\">" + this.completePrompt() + "</span> " + command + "<br/>";
     };
 
     Terminal.prototype.init = function () {
         isPhone && (document.getElementById("githubImg").style.display = "none");
-        this.sidenav.addEventListener("click", ignoreEvent);
         this.cmdLine.disabled = true;
         this.sidenavElements.forEach(function (elem) {
             elem.disabled = true;
@@ -234,11 +322,7 @@ var main = (function () {
                 this.handleCmd();
             }.bind(this, file);
             element.appendChild(document.createTextNode(capFirst(file.replace(/\.[^/.]+$/, "").replace(/_/g, " "))));
-            this.sidenav.appendChild(element);
-            this.sidenavElements.push(element);
         }
-        // Shouldn't use document.getElementById but Terminal is already using loads of params
-        document.getElementById("sidenavBtn").addEventListener("click", this.handleSidenav.bind(this));
     };
 
     Terminal.prototype.handleSidenav = function (event) {
@@ -270,7 +354,7 @@ var main = (function () {
 
     Terminal.prototype.unlock = function () {
         this.cmdLine.disabled = false;
-        this.prompt.textContent = this.completePrompt;
+        this.prompt.textContent = this.completePrompt()
         this.sidenavElements.forEach(function (elem) {
             elem.disabled = false;
         });
@@ -345,15 +429,32 @@ var main = (function () {
                 this.reboot();
                 break;
             case cmds.CD.value:
+                this.CD(cmdComponents);
+                break;
             case cmds.MV.value:
             case cmds.RMDIR.value:
             case cmds.RM.value:
             case cmds.TOUCH.value:
-                this.permissionDenied(cmdComponents);
+                this.touch(cmdComponents);
                 break;
             case cmds.SUDO.value:
                 this.sudo();
                 break;
+            case cmds.MKDIR.value:
+                this.mkdir(cmdComponents)
+                break;
+            case cmds.TREE.value:
+                this.tree()
+                break;
+            case cmds.NG.value:
+                this.ng(cmdComponents)
+                break
+            case cmds.SETFILE.value:
+                this.setFile(cmdComponents)
+                break
+            case cmds.NODE.value:
+                this.node(cmdComponents)
+                break
             default:
                 this.invalidCommand(cmdComponents);
                 break;
@@ -361,23 +462,116 @@ var main = (function () {
     };
 
     Terminal.prototype.cat = function (cmdComponents) {
-        var result;
-        if (cmdComponents.length <= 1) {
-            result = configs.getInstance().usage + ": " + cmds.CAT.value + " <" + configs.getInstance().file + ">";
-        } else if (!cmdComponents[1] || (!cmdComponents[1] === configs.getInstance().welcome_file_name && !files.getInstance().hasOwnProperty(cmdComponents[1]))) {
-            result = configs.getInstance().file_not_found.replace(configs.getInstance().value_token, cmdComponents[1]);
+        let fileName = cmdComponents[1]
+        if(typeof fs.currentDIR()[fileName] == 'string') {
+            this.type(fs.currentDIR()[fileName], this.unlock.bind(this));
         } else {
-            result = cmdComponents[1] === configs.getInstance().welcome_file_name ? configs.getInstance().welcome : files.getInstance()[cmdComponents[1]];
+            this.type('Not a valid file name', this.unlock.bind(this));
         }
-        this.type(result, this.unlock.bind(this));
+        
     };
 
     Terminal.prototype.ls = function () {
-        var result = ".\n..\n" + configs.getInstance().welcome_file_name + "\n";
-        for (var file in files.getInstance()) {
-            result += file + "\n";
-        }
+        let result = Object.keys(fs.currentDIR()).join('\n')
         this.type(result.trim(), this.unlock.bind(this));
+    };
+
+    Terminal.prototype.node = function (cmdComponents) {
+        let fileName = cmdComponents[1]
+        if(fileName && fileName.match(/\w+\.js/) && typeof fs.currentDIR()[fileName] == 'string') {
+            eval(jsParse(fs.currentDIR()[fileName]))
+            this.type('', this.unlock.bind(this));
+        } else if(fileName && fileName.match(/\w+/) && typeof fs.currentDIR()[`${fileName}.js`] == 'string'){
+            eval(jsParse(fs.currentDIR()[`${fileName}.js`]))
+            this.type('', this.unlock.bind(this));
+        } else {
+            this.type('Not a valid file name', this.unlock.bind(this));
+        }
+    };
+
+    const jsParse = (file) => {
+        let consoleLogs = file.match(/console\.log\('[^;]*/g)
+        if(consoleLogs) {
+            for(let log of consoleLogs) {
+                file = file.replace(log,`this.type(${log.replace('console.log(','').slice(0,-1)}, this.unlock.bind(this))`)
+            }
+        }
+        return file
+    }
+
+    Terminal.prototype.CD = function (cmdComponents) {
+        let dir = cmdComponents[1] //zero is the comand issued
+        if(dir == '..') {
+            fs.up()
+            this.type('', this.unlock.bind(this));
+        }else if(typeof fs.currentDIR()[dir] == 'string' || !fs.currentDIR()[dir]) {
+            this.type('The system cannot find the path specified.', this.unlock.bind(this));
+        } else {
+            fs.go(dir)
+            this.type('', this.unlock.bind(this));
+        }    
+    };
+
+    Terminal.prototype.mkdir = function (cmdComponents) {
+        let dir = cmdComponents[1] //zero is the comand issued
+        fs.mkdir(dir)
+        this.type('', this.unlock.bind(this));
+    };
+
+    Terminal.prototype.tree = function () {      
+        this.type(fs.getTree().substring(1), this.unlock.bind(this));
+    };
+
+    Terminal.prototype.touch = function (cmdComponents) { 
+        let fileName = cmdComponents[1]
+        fs.newFile(fileName)  
+        fileName.match(/\w+\.\w+/g) ? this.type('', this.unlock.bind(this)) : this.type('Not a valid file name', this.unlock.bind(this))
+    };
+
+    Terminal.prototype.setFile = function (cmdComponents) { 
+        let fileName = cmdComponents[1]
+        let data = cmdComponents[2]
+        if(Object.keys(fs.currentDIR()).includes(fileName) && fileName.match(/\w+\.\w+/g)) {
+            fs.currentDIR()[fileName] = data
+            this.type('', this.unlock.bind(this))
+        } else {
+            this.type('Not a valid file name', this.unlock.bind(this))
+        }
+    };
+
+    Terminal.prototype.ng = function (cmdComponents) {
+        let ngComand = cmdComponents[1]
+        let bar = '||||||||||||||||||||||||||||\n';
+        if(ngComand == 'deploy'){
+            if(ngBuilt) {
+                this.type(`Deploying Website:
+
+                Making routes
+                ${bar}
+                Loading Domain
+                ${bar}
+                Minifying Code
+                ${bar}
+                `, this.unlock.bind(this),true);
+                document.cookie = "terminalOver=true";
+                setTimeout(()=>window.location.replace("https://maxmfishernj.wixsite.com/mysite"),5500)
+            } else {
+                this.type('You neeed to build the website before you can deploy it', this.unlock.bind(this));
+            }
+        }else if(ngComand == 'build') {
+            this.type(`Building Website:
+
+            Building Homepage
+            ${bar}
+            Loading images
+            ${bar}
+            Making blog pages
+            ${bar}
+            `, this.unlock.bind(this),true);
+            ngBuilt = true
+        } else {
+            this.type(`ng ${ngComand}:command not found`, this.unlock.bind(this));
+        }
     };
 
     Terminal.prototype.sudo = function () {
@@ -396,7 +590,11 @@ var main = (function () {
     Terminal.prototype.help = function () {
         var result = configs.getInstance().general_help + "\n\n";
         for (var cmd in cmds) {
-            result += cmds[cmd].value + " - " + cmds[cmd].help + "\n";
+            if(cmds[cmd].value == 'ng') {
+                result += cmds[cmd].help + "\n";
+            }else {
+                result += cmds[cmd].value + " - " + cmds[cmd].help + "\n";
+            }         
         }
         this.type(result.trim(), this.unlock.bind(this));
     };
@@ -404,7 +602,7 @@ var main = (function () {
     Terminal.prototype.clear = function () {
         this.output.textContent = "";
         this.prompt.textContent = "";
-        this.prompt.textContent = this.completePrompt;
+        this.prompt.textContent = this.completePrompt();
         this.unlock();
     };
 
@@ -427,7 +625,11 @@ var main = (function () {
     };
 
     Terminal.prototype.invalidCommand = function (cmdComponents) {
-        this.type(configs.getInstance().invalid_command_message.replace(configs.getInstance().value_token, cmdComponents[0]), this.unlock.bind(this));
+        if(cmdComponents[0] == '') {
+            this.type('', this.unlock.bind(this))
+        }else {
+            this.type(configs.getInstance().invalid_command_message.replace(configs.getInstance().value_token, cmdComponents[0]), this.unlock.bind(this));
+        }
     };
 
     Terminal.prototype.focus = function () {
@@ -446,7 +648,7 @@ var main = (function () {
         this.output = output;
     };
 
-    TypeSimulator.prototype.type = function (text, callback) {
+    TypeSimulator.prototype.type = function (text, callback,progressbar) {
         var isURL = (function () {
             return function (str) {
                 return (str.startsWith("http") || str.startsWith("www")) && str.indexOf(" ") === -1 && str.indexOf("\n") === -1;
@@ -458,27 +660,19 @@ var main = (function () {
         var i = 0;
         var output = this.output;
         var timer = this.timer;
-        var skipped = false;
-        var skip = function () {
-            skipped = true;
-        }.bind(this);
-        document.addEventListener("dblclick", skip);
         (function typer() {
             if (i < text.length) {
                 var char = text.charAt(i);
                 var isNewLine = char === "\n";
                 output.innerHTML += isNewLine ? "<br/>" : char;
                 i++;
-                if (!skipped) {
-                    setTimeout(typer, isNewLine ? timer * 2 : timer);
+                if(progressbar) {
+                    setTimeout(typer,isNewLine ? timer * 2 : timer);
                 } else {
                     output.innerHTML += (text.substring(i).replace(new RegExp("\n", 'g'), "<br/>")) + "<br/>";
-                    document.removeEventListener("dblclick", skip);
-                    callback();
-                }
+                    callback(); 
+                }   
             } else if (callback) {
-                output.innerHTML += "<br/>";
-                document.removeEventListener("dblclick", skip);
                 callback();
             }
             scrollToBottom();
@@ -503,3 +697,4 @@ var main = (function () {
 })();
 
 window.onload = main.listener;
+
